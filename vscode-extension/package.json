@@ -1,0 +1,38 @@
+{
+  "name": "claude-usage-statusbar",
+  "displayName": "Claude Usage (status bar)",
+  "description": "Live Claude Code subscription limits (5h / weekly) in the VS Code status bar",
+  "version": "0.1.0",
+  "publisher": "oreiasccp",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "claudeUsage.refresh", "title": "Claude Usage: Refresh now" },
+      { "command": "claudeUsage.details", "title": "Claude Usage: Show details" }
+    ],
+    "configuration": {
+      "title": "Claude Usage",
+      "properties": {
+        "claudeUsage.refreshSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 10,
+          "description": "How often to poll the usage endpoint (seconds)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5"
+  }
+}
