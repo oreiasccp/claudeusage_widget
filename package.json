@@ -1,0 +1,17 @@
+{
+  "name": "claude-usage",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Claude Code usage & limits tray widget",
+  "type": "module",
+  "scripts": {
+    "fonts": "node scripts/fetch-fonts.mjs",
+    "gen-icon": "node scripts/gen-icon.mjs",
+    "icon": "tauri icon icons/source.png",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

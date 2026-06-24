@@ -1,0 +1,7 @@
+/.claude
+/node_modules
+/src-tauri/target
+/src-tauri/gen
+/icons/source.png
+/ui/fonts/*.woff2
+/ui/mascot.png
