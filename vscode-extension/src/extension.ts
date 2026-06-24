@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as https from "https";
+
+let lastErr = "";
 
 interface Win {
   utilization?: number;
@@ -29,25 +32,61 @@ function token(): string | undefined {
   }
 }
 
-/** Same endpoint Claude Code uses for /usage. Usage metadata — not inference. */
-async function fetchUsage(): Promise<UsageResp | undefined> {
-  const t = token();
-  if (!t) return undefined;
-  try {
-    const r = await fetch("https://api.anthropic.com/api/oauth/usage", {
-      headers: {
-        Authorization: `Bearer ${t}`,
-        "anthropic-beta": "oauth-2025-04-20",
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-        "User-Agent": "claude-usage-statusbar/0.1",
+/** Same endpoint Claude Code uses for /usage. Usage metadata — not inference.
+ *  Uses Node `https` (not global fetch — the extension host may not expose it). */
+function fetchUsage(): Promise<UsageResp | undefined> {
+  return new Promise((resolve) => {
+    const t = token();
+    if (!t) {
+      lastErr = "credentials não encontradas (~/.claude/.credentials.json)";
+      resolve(undefined);
+      return;
+    }
+    const req = https.request(
+      {
+        hostname: "api.anthropic.com",
+        path: "/api/oauth/usage",
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${t}`,
+          "anthropic-beta": "oauth-2025-04-20",
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+          "User-Agent": "claude-usage-statusbar/0.1",
+        },
+        timeout: 8000,
       },
+      (res) => {
+        let d = "";
+        res.on("data", (c) => (d += c));
+        res.on("end", () => {
+          const code = res.statusCode ?? 0;
+          if (code >= 200 && code < 300) {
+            try {
+              lastErr = "";
+              resolve(JSON.parse(d) as UsageResp);
+            } catch {
+              lastErr = "resposta inválida";
+              resolve(undefined);
+            }
+          } else {
+            lastErr = `HTTP ${code}` + (code === 401 ? " (token expirado — rode o Claude Code)" : "");
+            resolve(undefined);
+          }
+        });
+      },
+    );
+    req.on("error", (e) => {
+      lastErr = e.message;
+      resolve(undefined);
     });
-    if (!r.ok) return undefined;
-    return (await r.json()) as UsageResp;
-  } catch {
-    return undefined;
-  }
+    req.on("timeout", () => {
+      lastErr = "timeout";
+      req.destroy();
+      resolve(undefined);
+    });
+    req.end();
+  });
 }
 
 // Brasília (GMT-3) clock + countdown.
@@ -79,7 +118,7 @@ async function update(): Promise<void> {
   last = u;
   if (!u) {
     item.text = "$(error) Claude —";
-    item.tooltip = "Sem dados de uso (token expirado? rode o Claude Code uma vez).";
+    item.tooltip = `Sem dados de uso${lastErr ? ` — ${lastErr}` : ""}`;
     item.backgroundColor = undefined;
     return;
   }
@@ -133,7 +172,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("claudeUsage.details", async () => {
       await update();
       if (!last) {
-        vscode.window.showWarningMessage("Claude Usage: sem dados (token expirado?).");
+        vscode.window.showWarningMessage(`Claude Usage: sem dados${lastErr ? ` — ${lastErr}` : ""}.`);
         return;
       }
       const fh = Math.round(last.five_hour?.utilization ?? 0);
