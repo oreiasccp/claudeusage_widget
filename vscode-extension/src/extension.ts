@@ -4,8 +4,6 @@ import * as os from "os";
 import * as path from "path";
 import * as https from "https";
 
-let lastErr = "";
-
 interface Win {
   utilization?: number;
   resets_at?: string;
@@ -19,7 +17,9 @@ interface UsageResp {
 
 let item: vscode.StatusBarItem;
 let timer: NodeJS.Timeout | undefined;
-let last: UsageResp | undefined;
+let last: UsageResp | undefined; // last good payload (kept across failures)
+let lastErr = "";
+let backoff = 0; // extra seconds added after a 429, doubled each time
 
 /** OAuth access token written by Claude Code. */
 function token(): string | undefined {
@@ -32,13 +32,13 @@ function token(): string | undefined {
   }
 }
 
-/** Same endpoint Claude Code uses for /usage. Usage metadata — not inference.
- *  Uses Node `https` (not global fetch — the extension host may not expose it). */
+/** Same endpoint Claude Code uses for /usage (metadata, not inference).
+ *  Node `https` — the extension host may not expose global fetch. */
 function fetchUsage(): Promise<UsageResp | undefined> {
   return new Promise((resolve) => {
     const t = token();
     if (!t) {
-      lastErr = "credentials não encontradas (~/.claude/.credentials.json)";
+      lastErr = "credentials não encontradas";
       resolve(undefined);
       return;
     }
@@ -69,6 +69,9 @@ function fetchUsage(): Promise<UsageResp | undefined> {
               lastErr = "resposta inválida";
               resolve(undefined);
             }
+          } else if (code === 429) {
+            lastErr = "HTTP 429 (rate limited — aguardando)";
+            resolve(undefined);
           } else {
             lastErr = `HTTP ${code}` + (code === 401 ? " (token expirado — rode o Claude Code)" : "");
             resolve(undefined);
@@ -113,29 +116,22 @@ const until = (iso?: string): string => {
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
 
-async function update(): Promise<void> {
-  const u = await fetchUsage();
-  last = u;
-  if (!u) {
-    item.text = "$(error) Claude —";
-    item.tooltip = `Sem dados de uso${lastErr ? ` — ${lastErr}` : ""}`;
-    item.backgroundColor = undefined;
-    return;
-  }
+function render(u: UsageResp, stale: boolean): void {
   const fh = Math.round(u.five_hour?.utilization ?? 0);
   const wk = Math.round(u.seven_day?.utilization ?? 0);
   const worst = Math.max(fh, wk);
-  const icon = worst >= 90 ? "$(flame)" : worst >= 70 ? "$(warning)" : "$(pulse)";
+  const icon = stale ? "$(history)" : worst >= 90 ? "$(flame)" : worst >= 70 ? "$(warning)" : "$(pulse)";
   item.text = `${icon} 5h ${fh}% · sem ${wk}%`;
   item.backgroundColor =
-    worst >= 90
+    !stale && worst >= 90
       ? new vscode.ThemeColor("statusBarItem.errorBackground")
-      : worst >= 70
+      : !stale && worst >= 70
         ? new vscode.ThemeColor("statusBarItem.warningBackground")
         : undefined;
 
   const md = new vscode.MarkdownString();
   md.appendMarkdown(`**Claude — limites da assinatura**\n\n`);
+  if (stale) md.appendMarkdown(`_⚠ valores anteriores — ${lastErr}_\n\n`);
   md.appendMarkdown(
     `Sessão (5h): **${fh}%** · reinicia ${clock(u.five_hour?.resets_at)} (${until(u.five_hour?.resets_at)})\n\n`,
   );
@@ -150,14 +146,39 @@ async function update(): Promise<void> {
   item.tooltip = md;
 }
 
-function schedule(ctx: vscode.ExtensionContext): void {
-  if (timer) clearInterval(timer);
-  const sec = Math.max(
-    10,
-    vscode.workspace.getConfiguration("claudeUsage").get<number>("refreshSeconds", 30),
+async function update(): Promise<void> {
+  const u = await fetchUsage();
+  if (u) {
+    last = u;
+    backoff = 0;
+    render(u, false);
+    return;
+  }
+  // Failure: keep showing the last good value (don't blank on a transient 429).
+  if (lastErr.includes("429")) {
+    backoff = Math.min(backoff ? backoff * 2 : 60, 300);
+  }
+  if (last) {
+    render(last, true);
+  } else {
+    item.text = "$(error) Claude —";
+    item.tooltip = `Sem dados${lastErr ? ` — ${lastErr}` : ""}`;
+    item.backgroundColor = undefined;
+  }
+}
+
+function baseSeconds(): number {
+  return Math.max(
+    15,
+    vscode.workspace.getConfiguration("claudeUsage").get<number>("refreshSeconds", 60),
   );
-  timer = setInterval(() => void update(), sec * 1000);
-  ctx.subscriptions.push({ dispose: () => timer && clearInterval(timer) });
+}
+
+function loop(): void {
+  void update().finally(() => {
+    const sec = backoff ? Math.max(baseSeconds(), backoff) : baseSeconds();
+    timer = setTimeout(loop, sec * 1000);
+  });
 }
 
 export function activate(ctx: vscode.ExtensionContext): void {
@@ -166,6 +187,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   item.command = "claudeUsage.details";
   item.show();
   ctx.subscriptions.push(item);
+  ctx.subscriptions.push({ dispose: () => timer && clearTimeout(timer) });
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand("claudeUsage.refresh", () => void update()),
@@ -182,15 +204,11 @@ export function activate(ctx: vscode.ExtensionContext): void {
           `Semanal ${wk}% (reinicia ${clock(last.seven_day?.resets_at, true)})`,
       );
     }),
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("claudeUsage.refreshSeconds")) schedule(ctx);
-    }),
   );
 
-  void update();
-  schedule(ctx);
+  loop();
 }
 
 export function deactivate(): void {
-  if (timer) clearInterval(timer);
+  if (timer) clearTimeout(timer);
 }

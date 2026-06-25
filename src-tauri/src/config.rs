@@ -3,9 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// Polls hit the live usage endpoint, so keep the floor reasonable.
-pub const INTERVAL_CHOICES: [u64; 5] = [10, 20, 30, 60, 120];
-const DEFAULT_INTERVAL: u64 = 20;
+// Polls hit the live usage endpoint, which rate-limits — keep the floor high,
+// especially if the VS Code status-bar extension is also polling.
+pub const INTERVAL_CHOICES: [u64; 5] = [30, 60, 120, 300, 600];
+const DEFAULT_INTERVAL: u64 = 60;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {

@@ -2,7 +2,7 @@
   "name": "claude-usage-statusbar",
   "displayName": "Claude Usage (status bar)",
   "description": "Live Claude Code subscription limits (5h / weekly) in the VS Code status bar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "oreiasccp",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
@@ -18,9 +18,9 @@
       "properties": {
         "claudeUsage.refreshSeconds": {
           "type": "number",
-          "default": 30,
-          "minimum": 10,
-          "description": "How often to poll the usage endpoint (seconds)."
+          "default": 60,
+          "minimum": 15,
+          "description": "How often to poll the usage endpoint (seconds). The endpoint rate-limits; keep this ≥30 if you also run the tray widget."
         }
       }
     }

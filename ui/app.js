@@ -63,17 +63,19 @@ function setHeroPct(v, stale) {
 function render(p) {
   const hero = document.querySelector(".hero");
   const ring = $("ring");
-  const live = !!p.ok;
+  const live = !!p.ok && !p.stale; // fresh read
+  const has = (!!p.ok || !!p.stale) && p.five_hour_pct != null; // value to show
 
   // pill
   $("status-pill").className = "pill " + (live ? "live" : "stale");
-  $("status-text").textContent = live ? "live" : "—";
+  $("status-text").textContent = live ? "live" : p.stale ? "antigo" : "—";
 
   // hero — session %
   hero.classList.remove("warn", "crit", "stale");
-  if (live && p.five_hour_pct != null) {
+  if (has) {
     const v = Math.max(0, Math.min(100, p.five_hour_pct));
-    if (sev(v)) hero.classList.add(sev(v));
+    if (!live) hero.classList.add("stale");
+    else if (sev(v)) hero.classList.add(sev(v));
     ring.style.strokeDashoffset = RING_C * (1 - v / 100);
     setHeroPct(v, false);
   } else {
@@ -81,7 +83,7 @@ function render(p) {
     ring.style.strokeDashoffset = RING_C;
     setHeroPct(null, true);
   }
-  $("hero-reset").innerHTML = live ? resetLine(p.five_hour_resets_at, false) : "carregando…";
+  $("hero-reset").innerHTML = has ? resetLine(p.five_hour_resets_at, false) : "carregando…";
 
   // weekly (all)
   const fill = $("weekly-fill");

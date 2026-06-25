@@ -29,8 +29,10 @@ fn compute() -> Payload {
     if p.ok {
         return p;
     }
+    // Only fall back to the statusline file when it is genuinely fresh (an
+    // active terminal session). A stale file must NOT masquerade as live.
     let ls = state::read();
-    if ls.five_hour_pct.is_some() || ls.weekly_pct.is_some() {
+    if ls.fresh && (ls.five_hour_pct.is_some() || ls.weekly_pct.is_some()) {
         Payload {
             five_hour_pct: ls.five_hour_pct,
             five_hour_resets_at: ls.five_hour_resets_at,
@@ -40,10 +42,11 @@ fn compute() -> Payload {
             weekly_opus_pct: None,
             plan: p.plan,
             ok: true,
+            stale: false,
             fetched_ms: p.fetched_ms,
         }
     } else {
-        p
+        p // ok = false
     }
 }
 
@@ -231,8 +234,21 @@ pub fn run() {
 
             // Poll loop: fetch → cache → tray tooltip → push to popup → sleep.
             std::thread::spawn(move || loop {
-                let p = compute();
-                *handle.state::<AppState>().last.lock().unwrap() = Some(p.clone());
+                let fresh = compute();
+                // Keep the last good value during a transient failure (e.g. 429),
+                // marked stale — never regress to a blank or an old seed.
+                let p = {
+                    let st = handle.state::<AppState>();
+                    let mut guard = st.last.lock().unwrap();
+                    if fresh.ok {
+                        *guard = Some(fresh.clone());
+                        fresh
+                    } else if let Some(prev) = guard.clone() {
+                        Payload { stale: true, ..prev }
+                    } else {
+                        fresh
+                    }
+                };
                 if let Some(tray) = handle.tray_by_id("main") {
                     let _ = tray.set_tooltip(Some(tooltip(&p)));
                 }
@@ -247,7 +263,7 @@ pub fn run() {
                     .lock()
                     .unwrap()
                     .interval_secs
-                    .max(10);
+                    .max(30);
                 std::thread::sleep(Duration::from_secs(secs));
             });
 

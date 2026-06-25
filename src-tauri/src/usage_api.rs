@@ -21,6 +21,9 @@ pub struct Payload {
     pub weekly_opus_pct: Option<f64>,
     pub plan: Option<String>, // e.g. "max"
     pub ok: bool,
+    /// True when these are the last good values being shown during an outage
+    /// (e.g. a transient 429) rather than a fresh read.
+    pub stale: bool,
     pub fetched_ms: i64,
 }
 
