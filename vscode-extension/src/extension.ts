@@ -32,9 +32,49 @@ function token(): string | undefined {
   }
 }
 
+// Cooperative cache shared with the tray widget (same file, same shape) so the
+// two clients don't both hammer the rate-limited endpoint.
+const FRESH_MS = 45_000;
+const STALE_MS = 900_000;
+function cachePath(): string {
+  return path.join(os.homedir(), ".claude", "claude-usage-cache.json");
+}
+function readCache(): { raw: UsageResp; fetchedMs: number } | undefined {
+  try {
+    const j = JSON.parse(fs.readFileSync(cachePath(), "utf8"));
+    const fm = j?._fetched_ms;
+    if (typeof fm !== "number") return undefined;
+    return { raw: j as UsageResp, fetchedMs: fm };
+  } catch {
+    return undefined;
+  }
+}
+function writeCache(raw: UsageResp, ms: number): void {
+  try {
+    fs.writeFileSync(cachePath(), JSON.stringify({ ...raw, _fetched_ms: ms }));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Cooperative fetch: reuse a <45s cache, else hit the endpoint and rewrite it,
+ *  else fall back to a cache up to 15 min old (stale). */
+async function getUsage(): Promise<{ u: UsageResp; stale: boolean } | undefined> {
+  const now = Date.now();
+  const c = readCache();
+  if (c && now - c.fetchedMs <= FRESH_MS) return { u: c.raw, stale: false };
+  const r = await fetchRaw();
+  if (r) {
+    writeCache(r, now);
+    return { u: r, stale: false };
+  }
+  if (c && now - c.fetchedMs <= STALE_MS) return { u: c.raw, stale: true };
+  return undefined;
+}
+
 /** Same endpoint Claude Code uses for /usage (metadata, not inference).
  *  Node `https` — the extension host may not expose global fetch. */
-function fetchUsage(): Promise<UsageResp | undefined> {
+function fetchRaw(): Promise<UsageResp | undefined> {
   return new Promise((resolve) => {
     const t = token();
     if (!t) {
@@ -147,14 +187,14 @@ function render(u: UsageResp, stale: boolean): void {
 }
 
 async function update(): Promise<void> {
-  const u = await fetchUsage();
-  if (u) {
-    last = u;
-    backoff = 0;
-    render(u, false);
+  const res = await getUsage();
+  if (res) {
+    last = res.u;
+    if (!res.stale) backoff = 0;
+    render(res.u, res.stale);
     return;
   }
-  // Failure: keep showing the last good value (don't blank on a transient 429).
+  // Total failure (no cache either): keep last in-memory value, back off on 429.
   if (lastErr.includes("429")) {
     backoff = Math.min(backoff ? backoff * 2 : 60, 300);
   }

@@ -2,7 +2,7 @@
   "name": "claude-usage-statusbar",
   "displayName": "Claude Usage (status bar)",
   "description": "Live Claude Code subscription limits (5h / weekly) in the VS Code status bar",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "oreiasccp",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],

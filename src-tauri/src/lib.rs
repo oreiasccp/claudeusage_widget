@@ -25,7 +25,10 @@ struct AppState {
 /// Subscription limits. Endpoint is primary; statusline file is the fallback
 /// when the endpoint is unreachable or the OAuth token has expired.
 fn compute() -> Payload {
-    let p = usage_api::fetch();
+    // Cooperative shared cache: reuse a <45s cache, else fetch; on 429 fall back
+    // to a cache up to 15 min old (stale). Keeps total endpoint hits low across
+    // the tray + the VS Code extension + Claude Code.
+    let p = usage_api::get(45, 900);
     if p.ok {
         return p;
     }
