@@ -232,7 +232,13 @@ export function activate(ctx: vscode.ExtensionContext): void {
   ctx.subscriptions.push(
     vscode.commands.registerCommand("claudeUsage.refresh", () => void update()),
     vscode.commands.registerCommand("claudeUsage.details", async () => {
-      await update();
+      // Show what we already have — do NOT force a network call on click
+      // (that was tripping the rate limit). Only fetch if we have nothing yet,
+      // and even then via the cooperative cache.
+      if (!last) {
+        const r = await getUsage();
+        if (r) last = r.u;
+      }
       if (!last) {
         vscode.window.showWarningMessage(`Claude Usage: sem dados${lastErr ? ` — ${lastErr}` : ""}.`);
         return;
