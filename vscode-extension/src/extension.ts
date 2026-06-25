@@ -178,10 +178,6 @@ function render(u: UsageResp, stale: boolean): void {
   md.appendMarkdown(
     `Semanal: **${wk}%** · reinicia ${clock(u.seven_day?.resets_at, true)} (${until(u.seven_day?.resets_at)})\n\n`,
   );
-  const s3 = u.seven_day_sonnet?.utilization;
-  const o3 = u.seven_day_opus?.utilization;
-  if (s3 != null) md.appendMarkdown(`Semanal · Sonnet: ${Math.round(s3)}%\n\n`);
-  if (o3 != null) md.appendMarkdown(`Semanal · Opus: ${Math.round(o3)}%\n\n`);
   md.appendMarkdown(`_clique para detalhes_`);
   item.tooltip = md;
 }

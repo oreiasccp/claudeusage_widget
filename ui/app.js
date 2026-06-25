@@ -98,10 +98,6 @@ function render(p) {
   }
   $("weekly-reset").innerHTML = resetLine(p.weekly_resets_at, true);
 
-  // per-model weekly
-  $("s-sonnet").textContent = pct(p.weekly_sonnet_pct);
-  $("s-opus").textContent = pct(p.weekly_opus_pct);
-
   // footer
   $("ft-plan").textContent = planLabel(p.plan);
   $("ft-age").textContent = fmtAge(p);
